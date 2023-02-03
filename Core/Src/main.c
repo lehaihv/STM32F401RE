@@ -41,6 +41,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 UART_HandleTypeDef huart2;
 
@@ -51,6 +52,7 @@ UART_HandleTypeDef huart2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
@@ -59,7 +61,10 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+uint16_t value_adc = 4096; // adc_value
+float volts = 0;
+char msg[5];
+uint16_t adc[2];
 /* USER CODE END 0 */
 
 /**
@@ -90,10 +95,12 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start(&hadc1);
+  //HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -103,19 +110,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  char msg[20];
-	  uint16_t rawValue;
-	  float temp;
-	  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-	  rawValue = HAL_ADC_GetValue(&hadc1);
-	  temp = ((float)rawValue) / 4095 * 3300;
-	  temp = ((temp - 760.0) / 2.5) + 25;
-	  sprintf(msg, "rawValue: %hu\r\n", rawValue);
-	  HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), HAL_MAX_DELAY);
+	/*HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+	value_adc = HAL_ADC_GetValue(&hadc1);
+	//Convert to string and print
+	sprintf(msg,"%hu\r\n",value_adc);
+	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	volts = ((float)value_adc)*330/4096;
+	sprintf(msg,"%hu\r\n", (uint16_t)volts);
+	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);*/
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc, 2);
+	sprintf(msg,"%hu\r\n", adc[0]);
+	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	sprintf(msg,"%hu\r\n", adc[1]);
+	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	HAL_Delay(200);
 
-	  sprintf(msg, "Temperature: %f\r\n", temp);
-	  HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), HAL_MAX_DELAY);
-	  HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -184,15 +194,15 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.NbrOfConversion = 2;
   hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -200,9 +210,19 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_9;
+  sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_6;
+  sConfig.Rank = 2;
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -247,6 +267,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -255,14 +291,35 @@ static void MX_GPIO_Init(void)
 {
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
 
 }
 
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM1 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM1) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
