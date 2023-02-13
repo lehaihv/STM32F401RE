@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,6 +66,7 @@ uint16_t value_adc = 4096; // adc_value
 float volts = 0;
 char msg[5];
 uint16_t adc[2];
+uint8_t num1;
 /* USER CODE END 0 */
 
 /**
@@ -125,6 +127,9 @@ int main(void)
 	sprintf(msg,"%hu\r\n", adc[1]);
 	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 	HAL_Delay(200);
+	double tempp, xy = 500 * 2.56 / 1024;
+	tempp = (double)((-1481.96) + sqrt(2196200 + (1.8639 - xy) / 0.00000388));
+
 
   }
   /* USER CODE END 3 */
